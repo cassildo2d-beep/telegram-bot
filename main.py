@@ -25,21 +25,16 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = " ".join(context.args)
     sources = get_all_sources()
-
     buttons = []
 
     for source_name, source in sources.items():
         try:
             results = await source.search(query)
-
             for manga in results[:3]:
                 title = manga.get("title") or manga.get("name")
                 url = manga.get("url") or manga.get("slug")
-
-                # salva apenas dados essenciais
                 callback_id = f"manga|{source_name}|{url}"
                 buttons.append([InlineKeyboardButton(f"{title} ({source_name})", callback_data=callback_id)])
-
         except Exception:
             continue
 
@@ -55,7 +50,6 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     _, source_name, manga_url = query.data.split("|", 2)
     source = get_all_sources()[source_name]
 
@@ -65,16 +59,9 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await query.message.reply_text("Erro ao carregar capítulos.")
 
     buttons = []
-
-    # cria botões seguros
     for ch in chapters[:15]:
         ch_id = ch.get("url") or ch.get("id")
-        buttons.append([
-            InlineKeyboardButton(
-                ch.get("name"),
-                callback_data=f"chapter|{source_name}|{ch_id}"
-            )
-        ])
+        buttons.append([InlineKeyboardButton(ch.get("name"), callback_data=f"chapter|{source_name}|{ch_id}")])
 
     await query.edit_message_text(
         "Selecione o capítulo:",
@@ -90,8 +77,18 @@ async def chapter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     status = await query.message.reply_text("📦 Gerando CBZ...")
 
-    # pega imagens
     try:
+        # Buscar capítulo para pegar nome correto
+        chapters = await source.chapters(chapter_id)
+        chapter_info = next((ch for ch in chapters if ch.get("url") == chapter_id or ch.get("id") == chapter_id), None)
+
+        if chapter_info:
+            chapter_name = chapter_info.get("name", "Capítulo")
+            manga_title = chapter_info.get("manga_title", "Manga")
+        else:
+            chapter_name = "Capítulo"
+            manga_title = "Manga"
+
         images = await source.pages(chapter_id)
     except Exception:
         return await status.edit_text("Erro ao carregar capítulo.")
@@ -99,11 +96,6 @@ async def chapter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not images:
         return await status.edit_text("Capítulo vazio.")
 
-    # nome seguro
-    manga_title = getattr(source, "last_manga_title", "Manga")
-    chapter_name = getattr(source, "last_chapter_name", "Capítulo")
-
-    # gera CBZ
     cbz_path, cbz_name = await create_cbz(images, manga_title, chapter_name)
 
     await query.message.reply_document(

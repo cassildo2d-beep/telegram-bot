@@ -28,7 +28,7 @@ async def error_handler(update, context):
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📚 ToonBr Bot Online!\n\nUse:\n/buscar nome_do_manga"
+        "📚 Olá! Sou Yuki um Bot de download de mangas Online!\n\nUse:\n/buscar nome_do_manga"
     )
 
 

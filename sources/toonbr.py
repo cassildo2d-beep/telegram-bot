@@ -1,4 +1,5 @@
-import aiohttp
+import httpx
+
 
 class ToonBr:
     name = "ToonBr"
@@ -9,15 +10,17 @@ class ToonBr:
     # ================= SEARCH =================
     async def search(self, query: str):
         url = f"{self.api_url}/api/manga?page=1&limit=20&search={query}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                data = await resp.json()
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
 
         results = []
         for manga in data.get("data", []):
             results.append({
                 "title": manga.get("title"),
-                "url": manga.get("slug"),  # importante!
+                "url": manga.get("slug"),  # slug do mangá
             })
 
         return results
@@ -26,12 +29,13 @@ class ToonBr:
     async def chapters(self, manga_slug: str):
         url = f"{self.api_url}/api/manga/{manga_slug}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                data = await resp.json()
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
 
         chapters = []
-        manga_title = data.get("title")
+        manga_title = data.get("title", "Manga")
 
         for ch in data.get("chapters", []):
             chapters.append({
@@ -41,8 +45,17 @@ class ToonBr:
                 "manga_title": manga_title,
             })
 
-        # ordenar do mais recente pro mais antigo
-        chapters.sort(key=lambda x: float(x.get("chapter_number") or 0), reverse=True)
+        # Ordena com segurança (evita crash se vier None)
+        def safe_float(x):
+            try:
+                return float(x)
+            except:
+                return 0.0
+
+        chapters.sort(
+            key=lambda x: safe_float(x.get("chapter_number")),
+            reverse=True
+        )
 
         return chapters
 
@@ -50,9 +63,10 @@ class ToonBr:
     async def pages(self, chapter_id: str):
         url = f"{self.api_url}/api/chapter/{chapter_id}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                data = await resp.json()
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
 
         pages = []
         for p in data.get("pages", []):

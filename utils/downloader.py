@@ -1,16 +1,21 @@
 import httpx
 import asyncio
 
-async def download_image(client, url):
+async def fetch_image(client, url):
     try:
         r = await client.get(url, timeout=30.0)
         r.raise_for_status()
         return r.content
-    except:
+    except Exception:
         return None
 
 async def download_images(urls):
-    async with httpx.AsyncClient(http2=True) as client:
-        tasks = [download_image(client, u) for u in urls]
-        results = await asyncio.gather(*tasks)
-        return [r for r in results if r is not None]
+    """
+    Recebe lista de URLs, retorna lista de bytes de cada imagem
+    """
+    results = []
+    async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
+        tasks = [fetch_image(client, url) for url in urls]
+        fetched = await asyncio.gather(*tasks)
+        results = [img for img in fetched if img]
+    return results

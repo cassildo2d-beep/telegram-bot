@@ -1,6 +1,5 @@
 import os
 import logging
-from uuid import uuid4
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -37,10 +36,25 @@ def block_private(update: Update):
     return update.effective_chat.type == "private"
 
 
+# ======= DONO DA SESSÃO =======
+async def ensure_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    session = get_session(context, query.message.message_id)
+
+    user_id = query.from_user.id
+    owner_id = session.get("owner_id")
+
+    if owner_id and user_id != owner_id:
+        await query.answer("❌ Este pedido pertence a outro usuário.", show_alert=True)
+        return None
+
+    return session
+
+
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if block_private(update):
-        return await update.effective_message.reply_text("❌ Criado por @shadow404c.")
+        return await update.effective_message.reply_text("❌ Use o bot em grupos.")
     await update.effective_message.reply_text("📚 Manga Bot Online!\nUse:\n/buscar2 nome_do_manga")
 
 
@@ -62,7 +76,9 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for manga in results[:6]:
                 title = manga.get("title")
                 url = manga.get("url")
-                buttons.append([InlineKeyboardButton(f"{title} ({source_name})", callback_data=f"m|{source_name}|{url}|0")])
+                buttons.append([
+                    InlineKeyboardButton(f"{title} ({source_name})", callback_data=f"m|{source_name}|{url}|0")
+                ])
         except Exception:
             continue
 
@@ -74,7 +90,10 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
-    get_session(context, msg.message_id)
+    # registra dono
+    session = get_session(context, msg.message_id)
+    session["owner_id"] = update.effective_user.id
+    session["owner_name"] = update.effective_user.first_name
 
 
 # ================= LISTAR CAPÍTULOS =================
@@ -85,7 +104,9 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    session = get_session(context, query.message.message_id)
+    session = await ensure_owner(update, context)
+    if not session:
+        return
 
     _, source_name, manga_id, page_str = query.data.split("|")
     page = int(page_str)
@@ -125,7 +146,9 @@ async def chapter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    session = get_session(context, query.message.message_id)
+    session = await ensure_owner(update, context)
+    if not session:
+        return
 
     _, index_str = query.data.split("|")
     session["selected_index"] = int(index_str)
@@ -148,7 +171,9 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    session = get_session(context, query.message.message_id)
+    session = await ensure_owner(update, context)
+    if not session:
+        return
 
     chapters = session.get("chapters")
     index = session.get("selected_index")
@@ -183,6 +208,11 @@ async def input_cap_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     query = update.callback_query
     await query.answer()
+
+    session = await ensure_owner(update, context)
+    if not session:
+        return
+
     await query.message.reply_text("Digite o número do capítulo até onde deseja baixar:")
     return WAITING_FOR_CAP
 
@@ -196,6 +226,11 @@ async def receive_cap_number(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
 
     session = get_session(context, reply.message_id)
+
+    # protege dono
+    if update.effective_user.id != session.get("owner_id"):
+        await update.message.reply_text("❌ Você não iniciou este pedido.")
+        return ConversationHandler.END
 
     cap_text = update.message.text.strip()
     if not cap_text.replace(".", "", 1).isdigit():
@@ -256,6 +291,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
-    
-    
+    main()

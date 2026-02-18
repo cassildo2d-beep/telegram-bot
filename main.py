@@ -30,7 +30,7 @@ def only_groups(func):
         if update.effective_chat.type == "private":
             if update.effective_message:
                 await update.effective_message.reply_text(
-                    "❌ Este bot só funciona em grupos."
+                    "❌ Criado pôr @shadow404c."
                 )
             return
         return await func(update, context)

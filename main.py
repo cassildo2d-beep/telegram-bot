@@ -1,5 +1,5 @@
 import asyncio
-from aiogram import Bot, Dispatcher, 
+from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ChatType
 from aiogram.filters import Command

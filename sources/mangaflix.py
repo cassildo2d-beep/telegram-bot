@@ -1,59 +1,77 @@
 import httpx
-from datetime import datetime
 
-class MangaFlixSource:
+
+class MangaFlix:
     name = "MangaFlix"
-    base_url = "https://mangaflix.net"
-    api_url = "https://api.mangaflix.net/v1"
+    base_url = "https://mangaflix.com"
+    api_url = "https://api.mangaflix.com"
+    cdn_url = "https://cdn.mangaflix.com"
 
-    def __init__(self):
-        self.client = httpx.AsyncClient(timeout=30)
-
+    # ================= SEARCH =================
     async def search(self, query: str):
-        url = f"{self.api_url}/search/mangas?query={query}&selected_language=pt-br"
-        resp = await self.client.get(url)
-        resp.raise_for_status()
-        data = resp.json().get("data", [])
+        url = f"{self.api_url}/api/manga?page=1&limit=20&search={query}"
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
+
         results = []
-        for m in data:
+        for manga in data.get("data", []):
             results.append({
-                "title": m.get("name"),
-                "url": m.get("_id"),
-                "manga_title": m.get("name")
+                "title": manga.get("title"),
+                "url": manga.get("slug"),
             })
+
         return results
 
-    async def chapters(self, manga_id: str):
-        url = f"{self.api_url}/mangas/{manga_id}"
-        resp = await self.client.get(url)
-        resp.raise_for_status()
-        data = resp.json().get("data", {})
+    # ================= CHAPTERS =================
+    async def chapters(self, manga_slug: str):
+        url = f"{self.api_url}/api/manga/{manga_slug}"
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
+
         chapters = []
-        for c in data.get("chapters", []):
+        manga_title = data.get("title", "Manga")
+
+        for ch in data.get("chapters", []):
             chapters.append({
-                "name": f"Capítulo {c.get('number')}",
-                "url": c.get("_id"),
-                "chapter_number": c.get("number"),
-                "manga_title": data.get("name")
+                "name": ch.get("name"),
+                "chapter_number": ch.get("chapterNumber"),
+                "url": ch.get("id"),
+                "manga_title": manga_title,
             })
+
+        # Ordenação segura
+        def safe_float(x):
+            try:
+                return float(x)
+            except:
+                return 0.0
+
+        chapters.sort(
+            key=lambda x: safe_float(x.get("chapter_number")),
+            reverse=True
+        )
+
         return chapters
 
-    async def chapters_for_id(self, chapter_id: str):
-        url = f"{self.api_url}/chapters/{chapter_id}?selected_language=pt-br"
-        resp = await self.client.get(url)
-        if resp.status_code != 200:
-            return []
-        data = resp.json().get("data", {})
-        manga_id = data.get("manga_id")
-        return await self.chapters(manga_id)
-
+    # ================= PAGES =================
     async def pages(self, chapter_id: str):
-        url = f"{self.api_url}/chapters/{chapter_id}?selected_language=pt-br"
-        resp = await self.client.get(url)
-        if resp.status_code != 200:
-            return []
-        data = resp.json().get("data", {})
+        url = f"{self.api_url}/api/chapter/{chapter_id}"
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
+
         pages = []
-        for img in data.get("images", []):
-            pages.append({"image": img.get("default_url")})
+        for p in data.get("pages", []):
+            image = p.get("imageUrl")
+            if image:
+                pages.append(f"{self.cdn_url}{image}")
+
         return pages

@@ -6,7 +6,7 @@ from utils.downloader import download_images
 async def create_cbz(image_urls, manga_title, chapter_name):
     images_data = await download_images(image_urls)
     if not images_data:
-        raise ValueError("Nenhuma imagem foi baixada")
+        raise ValueError("❌ Nenhuma imagem foi baixada. Cap bloqueado ou inválido.")
 
     safe_title = "".join(c for c in manga_title if c.isalnum() or c in " _-")
     safe_chap = "".join(c for c in chapter_name if c.isalnum() or c in " _-")
@@ -18,4 +18,5 @@ async def create_cbz(image_urls, manga_title, chapter_name):
             img_name = f"{idx:03}.jpg"
             zf.writestr(img_name, img_bytes)
 
+    print(f"✅ CBZ criado: {tmp_path} ({len(images_data)} imagens)")
     return tmp_path, filename

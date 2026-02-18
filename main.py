@@ -24,18 +24,37 @@ CHAPTERS_PER_PAGE = 10
 WAITING_FOR_CAP = 1
 
 
+# ================= PROTEÇÃO GRUPOS =================
+def only_groups(func):
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_chat.type == "private":
+            if update.effective_message:
+                await update.effective_message.reply_text(
+                    "❌ Este bot só funciona em grupos."
+                )
+            return
+        return await func(update, context)
+    return wrapper
+
+
+def block_private(update: Update):
+    return update.effective_chat.type == "private"
+
+
 # ================= START =================
+@only_groups
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(
-        "📚 Manga Bot Online!\nUse:\n/buscar nome_do_manga"
+        "📚 Manga Bot Online!\nUse:\n/buscar2 nome_do_manga"
     )
 
 
 # ================= BUSCAR =================
+@only_groups
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.effective_message.reply_text(
-            "Use:\n/buscar nome_do_manga"
+            "Use:\n/buscar2 nome_do_manga"
         )
 
     query_text = " ".join(context.args)
@@ -71,6 +90,9 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= LISTAR CAPÍTULOS =================
 async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if block_private(update):
+        return
+
     query = update.callback_query
     await query.answer()
 
@@ -125,6 +147,9 @@ async def manga_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= OPÇÕES DE DOWNLOAD =================
 async def chapter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if block_private(update):
+        return
+
     query = update.callback_query
     await query.answer()
 
@@ -146,6 +171,9 @@ async def chapter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= DOWNLOAD NORMAL =================
 async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if block_private(update):
+        return
+
     query = update.callback_query
     await query.answer()
 
@@ -181,6 +209,9 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= BAIXAR ATÉ CAP X =================
 async def input_cap_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if block_private(update):
+        return
+
     query = update.callback_query
     await query.answer()
 
@@ -192,6 +223,9 @@ async def input_cap_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def receive_cap_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if block_private(update):
+        return ConversationHandler.END
+
     cap_text = update.message.text.strip()
 
     if not cap_text.replace(".", "", 1).isdigit():
@@ -261,7 +295,7 @@ def main():
     ).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("buscar", buscar))
+    app.add_handler(CommandHandler("buscar2", buscar))
 
     app.add_handler(CallbackQueryHandler(manga_callback, pattern="^m\\|"))
     app.add_handler(CallbackQueryHandler(chapter_callback, pattern="^c\\|"))

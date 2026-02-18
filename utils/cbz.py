@@ -1,38 +1,37 @@
-import zipfile
-import aiofiles
 import os
-import aiohttp
+import zipfile
+import httpx
 import asyncio
 
 os.makedirs("tmp", exist_ok=True)
 
-async def download_image(client, url, path):
-    async with client.get(url) as r:
+async def download_image(client, url):
+    try:
+        r = await client.get(url, timeout=60)
         r.raise_for_status()
-        f = await aiofiles.open(path, mode="wb")
-        await f.write(await r.read())
-        await f.close()
+        return r.content
+    except Exception as e:
+        print(f"Erro ao baixar imagem: {e}")
+        return None
 
 async def create_cbz(image_urls, manga_title, chapter_name):
-    manga_title_clean = manga_title.replace(" ", "_")
-    chapter_name_clean = chapter_name.replace(" ", "_")
-    cbz_filename = f"{manga_title_clean}_{chapter_name_clean}.cbz"
+    safe_title = manga_title.replace("/", "").replace(" ", "_")
+    safe_chapter = str(chapter_name).replace("/", "").replace(" ", "_")
+
+    cbz_filename = f"{safe_title}_{safe_chapter}.cbz"
     cbz_path = os.path.join("tmp", cbz_filename)
 
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for i, url in enumerate(image_urls):
-            img_path = os.path.join("tmp", f"{i}.jpg")
-            tasks.append(download_image(session, url, img_path))
-        await asyncio.gather(*tasks)
+    async with httpx.AsyncClient() as client:
+        tasks = [download_image(client, url) for url in image_urls]
+        images = await asyncio.gather(*tasks)
 
-    # Cria o CBZ
+    images = [img for img in images if img]
+
+    if not images:
+        raise Exception("Nenhuma imagem foi baixada")
+
     with zipfile.ZipFile(cbz_path, "w") as cbz:
-        for i in range(len(image_urls)):
-            cbz.write(os.path.join("tmp", f"{i}.jpg"), f"{i+1}.jpg")
-
-    # Remove imagens temporárias
-    for i in range(len(image_urls)):
-        os.remove(os.path.join("tmp", f"{i}.jpg"))
+        for i, img_bytes in enumerate(images):
+            cbz.writestr(f"{i+1}.jpg", img_bytes)
 
     return cbz_path, cbz_filename

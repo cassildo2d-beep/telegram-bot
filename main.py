@@ -40,7 +40,7 @@ def block_private(update: Update):
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if block_private(update):
-        return await update.effective_message.reply_text("❌ Use o bot em grupos.")
+        return await update.effective_message.reply_text("❌ Criado por @shadow404c.")
     await update.effective_message.reply_text("📚 Manga Bot Online!\nUse:\n/buscar2 nome_do_manga")
 
 

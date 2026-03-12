@@ -12,7 +12,7 @@ from telegram.ext import (
 )
 
 from utils.loader import get_all_sources
-from utils.cbz import create_cbz
+from utils.cbz import create_cbz, create_pdf, create_cbr
 
 logging.basicConfig(level=logging.INFO)
 
@@ -56,40 +56,49 @@ async def send_chapter(job):
         message = job["message"]
         source = job["source"]
         chapter = job["chapter"]
+        format_type = job.get("format", "cbz")
 
-        try:
-            pages = await source.pages(chapter["url"])
-        except:
-            await message.reply_text("❌ Erro ao obter páginas.")
-            return
+        pages = await source.pages(chapter["url"])
 
         if not pages:
             await message.reply_text("❌ Nenhuma página encontrada.")
             return
 
-        try:
-            cbz_buffer, cbz_name = await create_cbz(
+        if format_type == "pdf":
+            buffer, name = await create_pdf(
                 pages,
                 chapter.get("manga_title", "Manga"),
                 f"Cap_{chapter.get('chapter_number')}",
             )
-        except:
-            await message.reply_text("❌ Erro ao criar CBZ.")
-            return
 
-        await message.reply_document(document=cbz_buffer, filename=cbz_name)
-        cbz_buffer.close()
+        elif format_type == "cbr":
+            buffer, name = await create_cbr(
+                pages,
+                chapter.get("manga_title", "Manga"),
+                f"Cap_{chapter.get('chapter_number')}",
+            )
+
+        else:
+            buffer, name = await create_cbz(
+                pages,
+                chapter.get("manga_title", "Manga"),
+                f"Cap_{chapter.get('chapter_number')}",
+            )
+
+        await message.reply_document(document=buffer, filename=name)
+
+        buffer.close()
 
 
 # ==========================================================
-# BUSCAR EM TODAS AS FONTES (AGUARDANDO TODAS)
+# BUSCAR MANGÁ
 # ==========================================================
 
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query_text = " ".join(context.args)
     if not query_text:
-        await update.message.reply_text("Use /bb <nome>")
+        await update.message.reply_text("Use /buscar <nome do mangá>")
         return
 
     msg = await update.message.reply_text("🔎 Buscando em todas as fontes...")
@@ -127,7 +136,7 @@ async def search_source(name, source, query):
 
 
 # ==========================================================
-# RESULTADOS PAGINADOS
+# RESULTADOS
 # ==========================================================
 
 async def show_results(message, user_id, page):
@@ -166,7 +175,7 @@ async def show_results(message, user_id, page):
 
 
 # ==========================================================
-# CAPÍTULOS PAGINADOS
+# CAPÍTULOS
 # ==========================================================
 
 async def show_chapters(message, context, page, user_id):
@@ -183,7 +192,7 @@ async def show_chapters(message, context, page, user_id):
         buttons.append([
             InlineKeyboardButton(
                 f"Cap {chap.get('chapter_number')}",
-                callback_data=f"download_one|{i}|{user_id}"
+                callback_data=f"chapter_menu|{i}|{user_id}"
             )
         ])
 
@@ -195,7 +204,8 @@ async def show_chapters(message, context, page, user_id):
     if page < total_pages - 1:
         nav.append(InlineKeyboardButton("»", callback_data=f"chap_page|{page+1}|{user_id}"))
 
-    buttons.append(nav)
+    if nav:
+        buttons.append(nav)
 
     buttons.append([
         InlineKeyboardButton("🔙 Voltar", callback_data=f"back|0|{user_id}")
@@ -208,22 +218,14 @@ async def show_chapters(message, context, page, user_id):
 
 
 # ==========================================================
-# CALLBACKS
+# SELECIONAR MANGÁ
 # ==========================================================
 
-async def change_page(update, context):
-    query = update.callback_query
-    await query.answer()
-    if not is_owner(query):
-        return
-
-    page = int(query.data.split("|")[1])
-    await show_results(query.message, query.from_user.id, page)
-
-
 async def select_manga(update, context):
+
     query = update.callback_query
     await query.answer()
+
     if not is_owner(query):
         return
 
@@ -240,7 +242,7 @@ async def select_manga(update, context):
     user_id = query.from_user.id
 
     buttons = [
-        [InlineKeyboardButton("📥 Baixar tudo", callback_data=f"download_all|0|{user_id}")],
+        [InlineKeyboardButton("📥 Baixar todos", callback_data=f"download_all_menu|{user_id}")],
         [InlineKeyboardButton("📖 Ver capítulos", callback_data=f"chap_page|0|{user_id}")]
     ]
 
@@ -250,11 +252,43 @@ async def select_manga(update, context):
     )
 
 
-async def download_all(update, context):
+# ==========================================================
+# MENU FORMATO TODOS
+# ==========================================================
+
+async def download_all_menu(update, context):
+
     query = update.callback_query
     await query.answer()
+
     if not is_owner(query):
         return
+
+    user_id = query.from_user.id
+
+    buttons = [
+        [
+            InlineKeyboardButton("📦 CBZ", callback_data=f"download_all_format|cbz|{user_id}"),
+            InlineKeyboardButton("📄 PDF", callback_data=f"download_all_format|pdf|{user_id}"),
+            InlineKeyboardButton("📚 CBR", callback_data=f"download_all_format|cbr|{user_id}")
+        ]
+    ]
+
+    await query.message.reply_text(
+        "Escolha formato:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
+async def download_all(update, context):
+
+    query = update.callback_query
+    await query.answer()
+
+    if not is_owner(query):
+        return
+
+    format_type = query.data.split("|")[1]
 
     chapters = context.user_data["chapters"]
     source = context.user_data["source"]
@@ -263,19 +297,54 @@ async def download_all(update, context):
         await DOWNLOAD_QUEUE.put({
             "message": query.message,
             "source": source,
-            "chapter": chap
+            "chapter": chap,
+            "format": format_type
         })
 
     await query.message.reply_text("📥 Todos capítulos adicionados na fila.")
 
 
-async def download_one(update, context):
+# ==========================================================
+# MENU FORMATO CAPÍTULO
+# ==========================================================
+
+async def chapter_menu(update, context):
+
     query = update.callback_query
     await query.answer()
+
     if not is_owner(query):
         return
 
     index = int(query.data.split("|")[1])
+    user_id = query.from_user.id
+
+    buttons = [
+        [
+            InlineKeyboardButton("📦 CBZ", callback_data=f"download_one|{index}|cbz|{user_id}"),
+            InlineKeyboardButton("📄 PDF", callback_data=f"download_one|{index}|pdf|{user_id}"),
+            InlineKeyboardButton("📚 CBR", callback_data=f"download_one|{index}|cbr|{user_id}")
+        ]
+    ]
+
+    await query.message.reply_text(
+        "Escolha formato:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
+async def download_one(update, context):
+
+    query = update.callback_query
+    await query.answer()
+
+    if not is_owner(query):
+        return
+
+    data = query.data.split("|")
+
+    index = int(data[1])
+    format_type = data[2]
 
     chap = context.user_data["chapters"][index]
     source = context.user_data["source"]
@@ -283,25 +352,48 @@ async def download_one(update, context):
     await DOWNLOAD_QUEUE.put({
         "message": query.message,
         "source": source,
-        "chapter": chap
+        "chapter": chap,
+        "format": format_type
     })
 
     await query.message.reply_text("📥 Capítulo adicionado na fila.")
 
 
-async def change_chap_page(update, context):
+# ==========================================================
+# PAGINAÇÃO
+# ==========================================================
+
+async def change_page(update, context):
+
     query = update.callback_query
     await query.answer()
+
     if not is_owner(query):
         return
 
     page = int(query.data.split("|")[1])
+
+    await show_results(query.message, query.from_user.id, page)
+
+
+async def change_chap_page(update, context):
+
+    query = update.callback_query
+    await query.answer()
+
+    if not is_owner(query):
+        return
+
+    page = int(query.data.split("|")[1])
+
     await show_chapters(query.message, context, page, query.from_user.id)
 
 
 async def back_to_results(update, context):
+
     query = update.callback_query
     await query.answer()
+
     if not is_owner(query):
         return
 
@@ -313,13 +405,20 @@ async def back_to_results(update, context):
 # ==========================================================
 
 def main():
+
     app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
 
-    app.add_handler(CommandHandler("bb", buscar))
+    app.add_handler(CommandHandler("buscar", buscar))
+
     app.add_handler(CallbackQueryHandler(change_page, pattern="^page"))
     app.add_handler(CallbackQueryHandler(select_manga, pattern="^select"))
-    app.add_handler(CallbackQueryHandler(download_all, pattern="^download_all"))
+
+    app.add_handler(CallbackQueryHandler(download_all_menu, pattern="^download_all_menu"))
+    app.add_handler(CallbackQueryHandler(download_all, pattern="^download_all_format"))
+
+    app.add_handler(CallbackQueryHandler(chapter_menu, pattern="^chapter_menu"))
     app.add_handler(CallbackQueryHandler(download_one, pattern="^download_one"))
+
     app.add_handler(CallbackQueryHandler(change_chap_page, pattern="^chap_page"))
     app.add_handler(CallbackQueryHandler(back_to_results, pattern="^back"))
 
@@ -329,6 +428,7 @@ def main():
     app.post_init = startup
 
     print("🤖 Bot iniciado")
+
     app.run_polling(drop_pending_updates=True)
 
 
